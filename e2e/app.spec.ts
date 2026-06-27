@@ -62,6 +62,40 @@ test.describe('Jamboard', () => {
     await expect(page.locator('canvas')).toBeVisible()
   })
 
+  test('auto-switches to select after drawing', async ({ page }) => {
+    const canvas = page.locator('canvas')
+    const box = await canvas.boundingBox()
+    if (!box) throw new Error('Canvas not found')
+
+    await page.keyboard.press('r')
+    await expect(page.locator('button[title*="Rectangle"]')).toHaveClass(/bg-neutral-900 text-white/)
+
+    await page.mouse.move(box.x + 100, box.y + 100)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 200, box.y + 200)
+    await page.mouse.up()
+
+    await expect(page.locator('button[title*="Select"]')).toHaveClass(/bg-neutral-900 text-white/)
+    await expect(page.locator('button[title*="Rectangle"]')).not.toHaveClass(/bg-neutral-900 text-white/)
+  })
+
+  test('can pan with space + drag', async ({ page }) => {
+    const canvas = page.locator('canvas')
+    const box = await canvas.boundingBox()
+    if (!box) throw new Error('Canvas not found')
+
+    await page.locator('body').click()
+    await page.keyboard.down('Space')
+    await expect(canvas).toHaveCSS('cursor', 'grab')
+
+    await page.mouse.move(box.x + 200, box.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 300, box.y + 300)
+    await page.mouse.up()
+
+    await page.keyboard.up('Space')
+  })
+
   test('roughness toggle works', async ({ page }) => {
     const roughnessBtn = page.locator('button[title*="rough"], button[title*="fine"]')
     await expect(roughnessBtn).toBeVisible()

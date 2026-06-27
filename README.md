@@ -1,5 +1,7 @@
 # Jamboard
 
+[![CI](https://github.com/azmi2409/jamboard/actions/workflows/ci.yml/badge.svg)](https://github.com/azmi2409/jamboard/actions/workflows/ci.yml)
+
 A collaborative AI-powered whiteboard built with React, TypeScript, and HTML5 Canvas. Draw, brainstorm, and collaborate in real-time with others.
 
 **Demo:** [https://jamboard-ts.vercel.app](https://jamboard-ts.vercel.app)

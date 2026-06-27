@@ -108,6 +108,7 @@ function App() {
         tool={tool}
         roughness={roughness}
         elements={elements}
+        viewport={viewport}
         onChange={updateElements}
         onToolChange={setTool}
         onViewportChange={setViewport}

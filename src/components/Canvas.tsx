@@ -15,6 +15,7 @@ interface CanvasProps {
   tool: Tool
   roughness?: number
   elements?: CanvasElement[]
+  viewport?: Viewport
   onChange?: (elements: CanvasElement[]) => void
   onToolChange?: (tool: Tool) => void
   onViewportChange?: (viewport: Viewport) => void
@@ -43,6 +44,7 @@ export default function Canvas({
   tool,
   roughness = 1,
   elements: externalElements,
+  viewport: externalViewport,
   onChange,
   onToolChange,
   onViewportChange,
@@ -55,7 +57,7 @@ export default function Canvas({
   const needsRenderRef = useRef(true)
 
   const { elements, push, set, undo, redo } = useHistory(externalElements || [])
-  const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 })
+  const [viewport, setViewport] = useState<Viewport>(externalViewport || { x: 0, y: 0, zoom: 1 })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const { copy, paste, cut } = useClipboard(elements, selectedIds, push)
   const [pan, setPan] = useState<PanState>(DEFAULT_PAN)
@@ -88,6 +90,12 @@ export default function Canvas({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (externalViewport) {
+      setViewport(externalViewport)
+    }
+  }, [externalViewport])
 
   const drawingRef = useRef<{
     active: boolean

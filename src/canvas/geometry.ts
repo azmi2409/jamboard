@@ -48,26 +48,31 @@ export function pointInRect(
   y: number,
   width: number,
   height: number,
+  tolerance = 0,
 ): boolean {
   return (
-    point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height
+    point.x >= x - tolerance &&
+    point.x <= x + width + tolerance &&
+    point.y >= y - tolerance &&
+    point.y <= y + height + tolerance
   )
 }
 
 export function hitTestElement(
   point: Point,
   element: CanvasElement,
+  tolerance = 8,
 ): boolean {
   switch (element.type) {
     case 'rectangle':
     case 'image':
     case 'group':
-      return pointInRect(point, element.x, element.y, element.width, element.height)
+      return pointInRect(point, element.x, element.y, element.width, element.height, tolerance)
     case 'ellipse': {
       const cx = element.x + element.width / 2
       const cy = element.y + element.height / 2
-      const rx = element.width / 2
-      const ry = element.height / 2
+      const rx = element.width / 2 + tolerance
+      const ry = element.height / 2 + tolerance
       if (rx === 0 || ry === 0) return false
       const dx = point.x - cx
       const dy = point.y - cy
@@ -80,12 +85,12 @@ export function hitTestElement(
         x: element.x + element.width,
         y: element.y + element.height,
       }
-      return pointNearLine(point, start, end)
+      return pointNearLine(point, start, end, tolerance)
     }
     case 'freehand':
-      return element.points ? pointNearFreehand(point, element.points) : false
+      return element.points ? pointNearFreehand(point, element.points, tolerance) : false
     case 'text':
-      return pointInRect(point, element.x, element.y, element.width, element.height)
+      return pointInRect(point, element.x, element.y, element.width, element.height, tolerance)
     default:
       return false
   }

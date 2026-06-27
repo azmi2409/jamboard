@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+
+# Testing
+playwright-report
+test-results
+
+# OpenSpec & Config
+.opencode
+openspec

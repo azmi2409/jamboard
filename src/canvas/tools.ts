@@ -5,7 +5,7 @@ export function createElement(
   tool: Exclude<Tool, 'select'>,
   start: Point,
   end: Point,
-  options: { text?: string; points?: Point[] } = {},
+  options: { text?: string; points?: Point[]; roughness?: number } = {},
 ): CanvasElement {
   const id = generateId()
   const base = {
@@ -13,7 +13,7 @@ export function createElement(
     strokeColor: '#1e1e1e',
     backgroundColor: 'transparent',
     strokeWidth: 2,
-    roughness: 1,
+    roughness: options.roughness ?? 1,
     seed: Math.floor(Math.random() * 2 ** 31),
     version: 1,
   }

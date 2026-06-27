@@ -6,10 +6,14 @@ import { createElement, updateElement, moveElement, resizeElement } from '../can
 import { renderElements, renderSelection, renderGrid } from '../canvas/render.ts'
 import { hitTestElement, getElementBounds } from '../canvas/geometry.ts'
 import { useAutoSave } from '../hooks/useAutoSave.ts'
+import { useHistory } from '../hooks/useHistory.ts'
+import { useClipboard } from '../hooks/useClipboard.ts'
 import { loadCanvas } from '../state/localDb.ts'
+import TextEditor from './TextEditor.tsx'
 
 interface CanvasProps {
   tool: Tool
+  roughness?: number
   elements?: CanvasElement[]
   onChange?: (elements: CanvasElement[]) => void
   onViewportChange?: (viewport: Viewport) => void
@@ -36,6 +40,7 @@ const DEFAULT_PAN: PanState = {
 
 export default function Canvas({
   tool,
+  roughness = 1,
   elements: externalElements,
   onChange,
   onViewportChange,
@@ -47,24 +52,33 @@ export default function Canvas({
   const rafRef = useRef<number | null>(null)
   const needsRenderRef = useRef(true)
 
-  const [elements, setElements] = useState<CanvasElement[]>(externalElements || [])
+  const { elements, push, set, undo, redo } = useHistory(externalElements || [])
   const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const { copy, paste, cut } = useClipboard(elements, selectedIds, push)
   const [pan, setPan] = useState<PanState>(DEFAULT_PAN)
+  const [editingText, setEditingText] = useState<{
+    elementId: string
+    text: string
+  } | null>(null)
 
   useAutoSave(elements)
 
+  const loadedRef = useRef(false)
   useEffect(() => {
+    if (loadedRef.current) return
+    loadedRef.current = true
     let cancelled = false
     loadCanvas().then((saved) => {
       if (saved && !cancelled && elements.length === 0) {
-        setElements(saved)
+        set(saved)
       }
     })
     return () => {
       cancelled = true
     }
-  }, [elements.length])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const drawingRef = useRef<{
     active: boolean
@@ -80,6 +94,7 @@ export default function Canvas({
   })
 
   const prevElementsRef = useRef<CanvasElement[]>(elements)
+  const lastMouseDownRef = useRef<Point | null>(null)
   useEffect(() => {
     if (externalElements) {
       const same =
@@ -89,11 +104,11 @@ export default function Canvas({
         )
       if (!same) {
         prevElementsRef.current = externalElements
-        setElements(externalElements)
+        set(externalElements)
         needsRenderRef.current = true
       }
     }
-  }, [externalElements])
+  }, [externalElements, set])
 
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -181,9 +196,9 @@ export default function Canvas({
 
   const commitElement = useCallback(
     (element: CanvasElement) => {
-      setElements((prev) => prev.map((el) => (el.id === element.id ? element : el)))
+      push((prev) => prev.map((el) => (el.id === element.id ? element : el)))
     },
-    [],
+    [push],
   )
 
   const handlePointerDown = useCallback(
@@ -193,6 +208,7 @@ export default function Canvas({
       if (canvasEl) canvasEl.setPointerCapture(e.pointerId)
 
       const screenPoint = { x: e.clientX, y: e.clientY }
+      lastMouseDownRef.current = screenPoint
       const point = getCanvasPoint(screenPoint)
 
       if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -212,7 +228,7 @@ export default function Canvas({
           drawingRef.current = {
             active: true,
             element: hit,
-            startCanvas: handle ? point : { x: 0, y: 0 },
+            startCanvas: point,
             lastCanvas: point,
             mode: handle ? 'resize' : 'move',
             resizeHandle: handle,
@@ -220,9 +236,14 @@ export default function Canvas({
           setSelectedIds(new Set([hit.id]))
         } else {
           setSelectedIds(new Set())
+          setPan({
+            isPanning: true,
+            panStart: screenPoint,
+            viewportStart: { ...viewport },
+          })
         }
       } else {
-        const newElement = createElement(tool, point, point)
+        const newElement = createElement(tool, point, point, { roughness })
         drawingRef.current = {
           active: true,
           element: newElement,
@@ -230,11 +251,11 @@ export default function Canvas({
           lastCanvas: point,
           mode: 'draw',
         }
-        setElements((prev) => [...prev, newElement])
+        push((prev) => [...prev, newElement])
         setSelectedIds(new Set())
       }
     },
-    [elements, getCanvasPoint, tool, viewport],
+    [elements, getCanvasPoint, tool, viewport, roughness, push],
   )
 
   const handlePointerMove = useCallback(
@@ -251,6 +272,25 @@ export default function Canvas({
         return
       }
 
+      if (tool === 'select' && !drawingRef.current.active) {
+        const canvasEl = canvasRef.current
+        if (canvasEl) {
+          let cursor = 'default'
+          for (const id of selectedIds) {
+            const el = elements.find((e) => e.id === id)
+            if (el) {
+              const bounds = getElementBounds(el)
+              const handle = getResizeHandle(point, bounds)
+              if (handle) {
+                cursor = handle === 'nw' || handle === 'se' ? 'nwse-resize' : 'nesw-resize'
+                break
+              }
+            }
+          }
+          canvasEl.style.cursor = cursor
+        }
+      }
+
       const draw = drawingRef.current
       if (!draw.active || !draw.element) return
 
@@ -263,17 +303,19 @@ export default function Canvas({
         const delta = { x: point.x - draw.startCanvas.x, y: point.y - draw.startCanvas.y }
         const updated = moveElement(draw.element, delta)
         draw.element = updated
+        draw.startCanvas = point
         draw.lastCanvas = point
         commitElement(updated)
       } else if (draw.mode === 'resize' && draw.resizeHandle) {
         const delta = { x: point.x - draw.startCanvas.x, y: point.y - draw.startCanvas.y }
         const updated = resizeElement(draw.element, draw.resizeHandle, delta)
         draw.element = updated
+        draw.startCanvas = point
         draw.lastCanvas = point
         commitElement(updated)
       }
     },
-    [commitElement, getCanvasPoint, onCursorMove, pan],
+    [commitElement, getCanvasPoint, onCursorMove, pan, tool, selectedIds, elements],
   )
 
   const handlePointerUp = useCallback(
@@ -286,7 +328,9 @@ export default function Canvas({
         const dx = draw.lastCanvas.x - draw.startCanvas.x
         const dy = draw.lastCanvas.y - draw.startCanvas.y
         if (Math.sqrt(dx * dx + dy * dy) < MIN_DRAG_DISTANCE) {
-          setElements((prev) => prev.filter((el) => el.id !== draw.element!.id))
+          push((prev) => prev.filter((el) => el.id !== draw.element!.id))
+        } else {
+          setSelectedIds(new Set([draw.element.id]))
         }
       }
 
@@ -297,7 +341,63 @@ export default function Canvas({
       }
       setPan(DEFAULT_PAN)
     },
-    [],
+    [push],
+  )
+
+  const handleDoubleClick = useCallback(
+    (e: MouseEvent) => {
+      const screenPoint = { x: e.clientX, y: e.clientY }
+      const lastDown = lastMouseDownRef.current
+      if (lastDown) {
+        const dx = screenPoint.x - lastDown.x
+        const dy = screenPoint.y - lastDown.y
+        if (Math.sqrt(dx * dx + dy * dy) > MIN_DRAG_DISTANCE) return
+      }
+      const point = getCanvasPoint(screenPoint)
+      const hit = [...elements].reverse().find((el) => hitTestElement(point, el))
+
+      if (hit) {
+        if (hit.type === 'text') {
+          setEditingText({ elementId: hit.id, text: hit.text || '' })
+        } else {
+          const bounds = getElementBounds(hit)
+          const newText: CanvasElement = {
+            id: `text-${Date.now()}`,
+            type: 'text',
+            x: bounds.x + 10,
+            y: bounds.y + bounds.height / 2 - 12,
+            width: Math.max(bounds.width - 20, 60),
+            height: 24,
+            text: '',
+            strokeColor: '#1e1e1e',
+            strokeWidth: 2,
+            roughness,
+            seed: Math.floor(Math.random() * 2 ** 31),
+            version: 1,
+          }
+          push((prev) => [...prev, newText])
+          setEditingText({ elementId: newText.id, text: '' })
+        }
+      } else {
+        const newText: CanvasElement = {
+          id: `text-${Date.now()}`,
+          type: 'text',
+          x: point.x - 60,
+          y: point.y - 12,
+          width: 120,
+          height: 24,
+          text: '',
+          strokeColor: '#1e1e1e',
+          strokeWidth: 2,
+          roughness,
+          seed: Math.floor(Math.random() * 2 ** 31),
+          version: 1,
+        }
+        push((prev) => [...prev, newText])
+        setEditingText({ elementId: newText.id, text: '' })
+      }
+    },
+    [elements, getCanvasPoint, roughness, push],
   )
 
   const handleWheel = useCallback(
@@ -305,7 +405,7 @@ export default function Canvas({
       e.preventDefault()
       const screenPoint = { x: e.clientX, y: e.clientY }
       const canvasPoint = getCanvasPoint(screenPoint)
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1
+      const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05
       setViewport((prev) => {
         const newZoom = clamp(prev.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM)
         const newX = screenPoint.x - canvasPoint.x * newZoom
@@ -324,32 +424,110 @@ export default function Canvas({
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
     canvas.addEventListener('wheel', handleWheel, { passive: false })
+    canvas.addEventListener('dblclick', handleDoubleClick)
 
     return () => {
       canvas.removeEventListener('pointerdown', handlePointerDown)
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
       canvas.removeEventListener('wheel', handleWheel)
+      canvas.removeEventListener('dblclick', handleDoubleClick)
     }
-  }, [handlePointerDown, handlePointerMove, handlePointerUp, handleWheel])
+  }, [handlePointerDown, handlePointerMove, handlePointerUp, handleWheel, handleDoubleClick])
+
+  const commitText = useCallback(
+    (text: string) => {
+      if (!editingText) return
+      push((prev) =>
+        prev.map((el) =>
+          el.id === editingText.elementId
+            ? { ...el, text, version: el.version + 1 }
+            : el,
+        ),
+      )
+      setEditingText(null)
+    },
+    [editingText, push],
+  )
+
+  const cancelText = useCallback(() => {
+    if (!editingText) return
+    push((prev) => prev.filter((el) => el.id !== editingText.elementId || el.text))
+    setEditingText(null)
+  }, [editingText, push])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (editingText) return
+
+      const isMod = e.metaKey || e.ctrlKey
+
+      if (isMod && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+        return
+      }
+      if (isMod && e.key === 'z' && e.shiftKey) {
+        e.preventDefault()
+        redo()
+        return
+      }
+      if (isMod && e.key === 'y') {
+        e.preventDefault()
+        redo()
+        return
+      }
+      if (isMod && e.key === 'c') {
+        e.preventDefault()
+        copy()
+        return
+      }
+      if (isMod && e.key === 'v') {
+        e.preventDefault()
+        const pastedIds = paste()
+        if (pastedIds.length > 0) setSelectedIds(new Set(pastedIds))
+        return
+      }
+      if (isMod && e.key === 'x') {
+        e.preventDefault()
+        const cutIds = cut()
+        if (cutIds.length > 0) setSelectedIds(new Set(cutIds))
+        return
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        setElements((prev) => prev.filter((el) => !selectedIds.has(el.id)))
+        push((prev) => prev.filter((el) => !selectedIds.has(el.id)))
         setSelectedIds(new Set())
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedIds])
+  }, [selectedIds, editingText, push, undo, redo, copy, paste, cut])
+
+  const editingElement = editingText
+    ? elements.find((el) => el.id === editingText.elementId)
+    : null
 
   return (
-    <div ref={containerRef} className="w-full h-full">
+    <div ref={containerRef} className="relative w-full h-full">
       <canvas
         ref={canvasRef}
-        className="block h-full w-full cursor-crosshair touch-none"
+        className={`block h-full w-full touch-none ${tool === 'select' ? 'cursor-default' : 'cursor-crosshair'}`}
       />
+      {editingText && editingElement && (
+        <TextEditor
+          text={editingText.text}
+          x={editingElement.x}
+          y={editingElement.y}
+          width={editingElement.width}
+          height={editingElement.height}
+          fontSize={24}
+          color={editingElement.strokeColor}
+          viewport={viewport}
+          onSubmit={commitText}
+          onCancel={cancelText}
+        />
+      )}
     </div>
   )
 }

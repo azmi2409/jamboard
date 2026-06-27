@@ -1,5 +1,6 @@
 import rough from 'roughjs'
 import type { CanvasElement, Point, Viewport } from './types.ts'
+import { getConnectionPoints } from './geometry.ts'
 
 const DEFAULT_COLORS = {
   stroke: '#1e1e1e',
@@ -262,4 +263,71 @@ function getBounds(element: CanvasElement) {
     width: element.width,
     height: element.height,
   }
+}
+
+export function renderConnectionPoints(
+  ctx: CanvasRenderingContext2D,
+  elements: CanvasElement[],
+  viewport: Viewport,
+  excludeId?: string,
+) {
+  ctx.save()
+  ctx.setTransform(
+    viewport.zoom,
+    0,
+    0,
+    viewport.zoom,
+    viewport.x,
+    viewport.y,
+  )
+
+  const pointRadius = 5 / viewport.zoom
+
+  for (const element of elements) {
+    if (element.id === excludeId) continue
+    if (element.type === 'arrow' || element.type === 'line' || element.type === 'freehand' || element.type === 'text') continue
+
+    const points = getConnectionPoints(element)
+    for (const pt of points) {
+      ctx.beginPath()
+      ctx.arc(pt.x, pt.y, pointRadius, 0, Math.PI * 2)
+      ctx.fillStyle = '#3b82f6'
+      ctx.fill()
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 1.5 / viewport.zoom
+      ctx.stroke()
+    }
+  }
+
+  ctx.restore()
+}
+
+export function renderSnapIndicator(
+  ctx: CanvasRenderingContext2D,
+  point: Point,
+  viewport: Viewport,
+) {
+  ctx.save()
+  ctx.setTransform(
+    viewport.zoom,
+    0,
+    0,
+    viewport.zoom,
+    viewport.x,
+    viewport.y,
+  )
+
+  const radius = 8 / viewport.zoom
+  ctx.beginPath()
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2)
+  ctx.strokeStyle = '#3b82f6'
+  ctx.lineWidth = 2 / viewport.zoom
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.arc(point.x, point.y, 3 / viewport.zoom, 0, Math.PI * 2)
+  ctx.fillStyle = '#3b82f6'
+  ctx.fill()
+
+  ctx.restore()
 }

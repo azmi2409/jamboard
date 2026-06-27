@@ -1,4 +1,10 @@
-import type { CanvasElement, Point } from './types.ts'
+import type { CanvasElement, ConnectionBinding, Point } from './types.ts'
+
+export function distance(a: Point, b: Point): number {
+  const dx = a.x - b.x
+  const dy = a.y - b.y
+  return Math.sqrt(dx * dx + dy * dy)
+}
 
 export function normalizeRect(x1: number, y1: number, x2: number, y2: number) {
   const x = Math.min(x1, x2)
@@ -107,4 +113,77 @@ export function getElementBounds(element: CanvasElement) {
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
   }
   return { x: element.x, y: element.y, width: element.width, height: element.height }
+}
+
+export function getConnectionPoints(element: CanvasElement): Point[] {
+  const bounds = getElementBounds(element)
+  const cx = bounds.x + bounds.width / 2
+  const cy = bounds.y + bounds.height / 2
+  return [
+    { x: cx, y: bounds.y },           // top
+    { x: bounds.x + bounds.width, y: cy }, // right
+    { x: cx, y: bounds.y + bounds.height }, // bottom
+    { x: bounds.x, y: cy },           // left
+  ]
+}
+
+export function findNearestConnectionPoint(
+  point: Point,
+  elements: CanvasElement[],
+  excludeId: string,
+  threshold = 20,
+): { element: CanvasElement; connectionPoint: Point; index: number } | null {
+  let best: { element: CanvasElement; connectionPoint: Point; index: number; dist: number } | null = null
+  for (const el of elements) {
+    if (el.id === excludeId) continue
+    if (el.type === 'arrow' || el.type === 'line' || el.type === 'freehand' || el.type === 'text') continue
+    const points = getConnectionPoints(el)
+    for (let i = 0; i < points.length; i++) {
+      const dist = distance(point, points[i])
+      if (dist <= threshold && (!best || dist < best.dist)) {
+        best = { element: el, connectionPoint: points[i], index: i, dist }
+      }
+    }
+  }
+  if (!best) return null
+  return { element: best.element, connectionPoint: best.connectionPoint, index: best.index }
+}
+
+export function getBoundPoint(
+  element: CanvasElement,
+  binding: ConnectionBinding,
+  allElements: CanvasElement[],
+): Point {
+  const target = allElements.find((el) => el.id === binding.elementId)
+  if (!target) {
+    return { x: element.x + element.width, y: element.y + element.height }
+  }
+  const points = getConnectionPoints(target)
+  const idx = Math.abs(binding.index) % points.length
+  return points[idx]
+}
+
+export function getConnectionPointIndex(
+  point: Point,
+  element: CanvasElement,
+): number {
+  const points = getConnectionPoints(element)
+  let bestIdx = 0
+  let bestDist = Infinity
+  for (let i = 0; i < points.length; i++) {
+    const d = distance(point, points[i])
+    if (d < bestDist) {
+      bestDist = d
+      bestIdx = i
+    }
+  }
+  return bestIdx
+}
+
+export function getConnectionPointByIndex(
+  element: CanvasElement,
+  index: number,
+): Point {
+  const points = getConnectionPoints(element)
+  return points[Math.abs(index) % points.length]
 }

@@ -12,6 +12,13 @@ export interface Point {
   y: number
 }
 
+export interface ConnectionBinding {
+  elementId: string
+  focus: number // -1 to 1, which connection point on the target
+  gap: number // distance from element edge
+  index: number // which connection point (0=top, 1=right, 2=bottom, 3=left)
+}
+
 export interface Viewport {
   x: number
   y: number
@@ -43,5 +50,7 @@ export interface CanvasElement {
   text?: string
   src?: string
   groupChildren?: string[]
+  startBinding?: ConnectionBinding | null
+  endBinding?: ConnectionBinding | null
   version: number
 }

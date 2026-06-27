@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import rough from 'roughjs'
 import type { CanvasElement, Point, Tool, Viewport } from '../canvas/types.ts'
 import { screenToCanvas, clamp } from '../canvas/math.ts'
-import { createElement, updateElement, moveElement, resizeElement } from '../canvas/tools.ts'
-import { renderElements, renderSelection, renderGrid } from '../canvas/render.ts'
-import { hitTestElement, getElementBounds } from '../canvas/geometry.ts'
+import { createElement, updateElement, moveElement, resizeElement, updateBoundArrows, removeBindings } from '../canvas/tools.ts'
+import { renderElements, renderSelection, renderGrid, renderConnectionPoints, renderSnapIndicator } from '../canvas/render.ts'
+import { hitTestElement, getElementBounds, findNearestConnectionPoint } from '../canvas/geometry.ts'
 import { useAutoSave } from '../hooks/useAutoSave.ts'
 import { useHistory } from '../hooks/useHistory.ts'
 import { useClipboard } from '../hooks/useClipboard.ts'
@@ -71,6 +71,7 @@ export default function Canvas({
     width: number
     height: number
   } | null>(null)
+  const [snapPoint, setSnapPoint] = useState<Point | null>(null)
   const spaceRef = useRef(false)
 
   useAutoSave(elements)
@@ -178,6 +179,11 @@ export default function Canvas({
     renderGrid(ctx, cssWidth, cssHeight, viewport)
     renderElements(ctx, rc, elements, viewport)
 
+    if (tool === 'arrow' || tool === 'line') {
+      const drawingElement = drawingRef.current.element
+      renderConnectionPoints(ctx, elements, viewport, drawingElement?.id)
+    }
+
     for (const element of elements) {
       if (selectedIds.has(element.id)) {
         renderSelection(ctx, element, viewport)
@@ -185,6 +191,10 @@ export default function Canvas({
       if (generatingIds?.has(element.id)) {
         renderGeneratingIndicator(ctx, element, viewport)
       }
+    }
+
+    if (snapPoint) {
+      renderSnapIndicator(ctx, snapPoint, viewport)
     }
 
     if (selectionRect) {
@@ -203,7 +213,7 @@ export default function Canvas({
     }
 
     needsRenderRef.current = false
-  }, [elements, viewport, selectedIds, generatingIds, selectionRect])
+  }, [elements, viewport, selectedIds, generatingIds, selectionRect, snapPoint, tool])
 
   useEffect(() => {
     needsRenderRef.current = true
@@ -273,12 +283,32 @@ export default function Canvas({
           setSelectionRect({ x: point.x, y: point.y, width: 0, height: 0 })
         }
       } else {
-        const newElement = createElement(tool, point, point, { roughness })
+        let startPoint = point
+        let startBinding: import('../canvas/types.ts').ConnectionBinding | null = null
+
+        if (tool === 'arrow' || tool === 'line') {
+          const nearest = findNearestConnectionPoint(point, elements, '')
+          if (nearest) {
+            startPoint = nearest.connectionPoint
+            startBinding = {
+              elementId: nearest.element.id,
+              focus: 0,
+              gap: 0,
+              index: nearest.index,
+            }
+            setSnapPoint(nearest.connectionPoint)
+          }
+        }
+
+        const newElement = createElement(tool, startPoint, startPoint, { roughness })
+        if (startBinding) {
+          newElement.startBinding = startBinding
+        }
         drawingRef.current = {
           active: true,
           element: newElement,
-          startCanvas: point,
-          lastCanvas: point,
+          startCanvas: startPoint,
+          lastCanvas: startPoint,
           mode: 'draw',
         }
         set((prev) => [...prev, newElement])
@@ -339,9 +369,31 @@ export default function Canvas({
       if (!draw.element) return
 
       if (draw.mode === 'draw') {
-        const updated = updateElement(draw.element, draw.startCanvas, point)
+        let targetPoint = point
+        let endBinding: import('../canvas/types.ts').ConnectionBinding | null = null
+
+        if (draw.element && (draw.element.type === 'arrow' || draw.element.type === 'line')) {
+          const nearest = findNearestConnectionPoint(point, elements, draw.element.id)
+          if (nearest) {
+            targetPoint = nearest.connectionPoint
+            endBinding = {
+              elementId: nearest.element.id,
+              focus: 0,
+              gap: 0,
+              index: nearest.index,
+            }
+            setSnapPoint(nearest.connectionPoint)
+          } else {
+            setSnapPoint(null)
+          }
+        }
+
+        const updated = {
+          ...updateElement(draw.element!, draw.startCanvas, targetPoint),
+          endBinding,
+        }
         draw.element = updated
-        draw.lastCanvas = point
+        draw.lastCanvas = targetPoint
         set((prev) => prev.map((el) => (el.id === updated.id ? updated : el)))
       } else if (draw.mode === 'move') {
         const delta = { x: point.x - draw.startCanvas.x, y: point.y - draw.startCanvas.y }
@@ -349,7 +401,10 @@ export default function Canvas({
         draw.element = updated
         draw.startCanvas = point
         draw.lastCanvas = point
-        set((prev) => prev.map((el) => (el.id === updated.id ? updated : el)))
+        set((prev) => {
+          const moved = prev.map((el) => (el.id === updated.id ? updated : el))
+          return updateBoundArrows(updated.id, moved)
+        })
       } else if (draw.mode === 'resize' && draw.resizeHandle) {
         const delta = { x: point.x - draw.startCanvas.x, y: point.y - draw.startCanvas.y }
         const updated = resizeElement(draw.element, draw.resizeHandle, delta)
@@ -410,6 +465,7 @@ export default function Canvas({
       }
       setSelectionRect(null)
       setPan(DEFAULT_PAN)
+      setSnapPoint(null)
     },
     [push, selectionRect, elements, onToolChange],
   )
@@ -598,7 +654,14 @@ export default function Canvas({
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        push((prev) => prev.filter((el) => !selectedIds.has(el.id)))
+        push((prev) => {
+          const filtered = prev.filter((el) => !selectedIds.has(el.id))
+          let result = filtered
+          for (const id of selectedIds) {
+            result = removeBindings(result, id)
+          }
+          return result
+        })
         setSelectedIds(new Set())
       }
     }

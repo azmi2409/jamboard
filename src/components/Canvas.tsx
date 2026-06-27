@@ -218,13 +218,6 @@ export default function Canvas({
     [viewport],
   )
 
-  const commitElement = useCallback(
-    (element: CanvasElement) => {
-      push((prev) => prev.map((el) => (el.id === element.id ? element : el)))
-    },
-    [push],
-  )
-
   const handlePointerDown = useCallback(
     (e: PointerEvent) => {
       if (editingText) {
@@ -341,24 +334,24 @@ export default function Canvas({
         const updated = updateElement(draw.element, draw.startCanvas, point)
         draw.element = updated
         draw.lastCanvas = point
-        commitElement(updated)
+        set((prev) => prev.map((el) => (el.id === updated.id ? updated : el)))
       } else if (draw.mode === 'move') {
         const delta = { x: point.x - draw.startCanvas.x, y: point.y - draw.startCanvas.y }
         const updated = moveElement(draw.element, delta)
         draw.element = updated
         draw.startCanvas = point
         draw.lastCanvas = point
-        commitElement(updated)
+        set((prev) => prev.map((el) => (el.id === updated.id ? updated : el)))
       } else if (draw.mode === 'resize' && draw.resizeHandle) {
         const delta = { x: point.x - draw.startCanvas.x, y: point.y - draw.startCanvas.y }
         const updated = resizeElement(draw.element, draw.resizeHandle, delta)
         draw.element = updated
         draw.startCanvas = point
         draw.lastCanvas = point
-        commitElement(updated)
+        set((prev) => prev.map((el) => (el.id === updated.id ? updated : el)))
       }
     },
-    [commitElement, getCanvasPoint, onCursorMove, pan, tool, selectedIds, elements],
+    [set, getCanvasPoint, onCursorMove, pan, tool, selectedIds, elements],
   )
 
   const handlePointerUp = useCallback(
@@ -386,9 +379,12 @@ export default function Canvas({
         if (Math.sqrt(dx * dx + dy * dy) < MIN_DRAG_DISTANCE) {
           push((prev) => prev.filter((el) => el.id !== draw.element!.id))
         } else {
+          push((prev) => prev.map((el) => (el.id === draw.element!.id ? draw.element! : el)))
           setSelectedIds(new Set([draw.element.id]))
           onToolChange?.('select')
         }
+      } else if (draw.active && draw.element && (draw.mode === 'move' || draw.mode === 'resize')) {
+        push((prev) => prev.map((el) => (el.id === draw.element!.id ? draw.element! : el)))
       }
 
       drawingRef.current = {

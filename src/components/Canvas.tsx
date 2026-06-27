@@ -281,11 +281,11 @@ export default function Canvas({
           lastCanvas: point,
           mode: 'draw',
         }
-        push((prev) => [...prev, newElement])
+        set((prev) => [...prev, newElement])
         setSelectedIds(new Set())
       }
     },
-    [elements, getCanvasPoint, tool, viewport, roughness, push, editingText],
+    [elements, getCanvasPoint, tool, viewport, roughness, set, editingText],
   )
 
   const handlePointerMove = useCallback(
@@ -387,12 +387,20 @@ export default function Canvas({
         if (Math.sqrt(dx * dx + dy * dy) < MIN_DRAG_DISTANCE) {
           push((prev) => prev.filter((el) => el.id !== draw.element!.id))
         } else {
-          push((prev) => prev.map((el) => (el.id === draw.element!.id ? draw.element! : el)))
+          const finalElement = draw.element
+          push((prev) => {
+            const exists = prev.some((el) => el.id === finalElement.id)
+            if (exists) {
+              return prev.map((el) => (el.id === finalElement.id ? finalElement : el))
+            }
+            return [...prev, finalElement]
+          })
           setSelectedIds(new Set([draw.element.id]))
           onToolChange?.('select')
         }
       } else if (draw.active && draw.element && (draw.mode === 'move' || draw.mode === 'resize')) {
-        push((prev) => prev.map((el) => (el.id === draw.element!.id ? draw.element! : el)))
+        const finalElement = draw.element
+        push((prev) => prev.map((el) => (el.id === finalElement.id ? finalElement : el)))
       }
 
       drawingRef.current = {

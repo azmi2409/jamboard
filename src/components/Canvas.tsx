@@ -16,6 +16,7 @@ interface CanvasProps {
   roughness?: number
   elements?: CanvasElement[]
   onChange?: (elements: CanvasElement[]) => void
+  onToolChange?: (tool: Tool) => void
   onViewportChange?: (viewport: Viewport) => void
   onCursorMove?: (point: Point) => void
   generatingIds?: Set<string>
@@ -43,6 +44,7 @@ export default function Canvas({
   roughness = 1,
   elements: externalElements,
   onChange,
+  onToolChange,
   onViewportChange,
   onCursorMove,
   generatingIds,
@@ -225,6 +227,9 @@ export default function Canvas({
 
   const handlePointerDown = useCallback(
     (e: PointerEvent) => {
+      if (editingText) {
+        return
+      }
       e.preventDefault()
       const canvasEl = canvasRef.current
       if (canvasEl) canvasEl.setPointerCapture(e.pointerId)
@@ -279,7 +284,7 @@ export default function Canvas({
         setSelectedIds(new Set())
       }
     },
-    [elements, getCanvasPoint, tool, viewport, roughness, push],
+    [elements, getCanvasPoint, tool, viewport, roughness, push, editingText],
   )
 
   const handlePointerMove = useCallback(
@@ -382,6 +387,7 @@ export default function Canvas({
           push((prev) => prev.filter((el) => el.id !== draw.element!.id))
         } else {
           setSelectedIds(new Set([draw.element.id]))
+          onToolChange?.('select')
         }
       }
 
@@ -393,7 +399,7 @@ export default function Canvas({
       setSelectionRect(null)
       setPan(DEFAULT_PAN)
     },
-    [push, selectionRect, elements],
+    [push, selectionRect, elements, onToolChange],
   )
 
   const handleDoubleClick = useCallback(

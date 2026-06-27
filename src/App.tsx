@@ -109,6 +109,7 @@ function App() {
         roughness={roughness}
         elements={elements}
         onChange={updateElements}
+        onToolChange={setTool}
         onViewportChange={setViewport}
         onCursorMove={updateCursor}
         generatingIds={generatingIds}

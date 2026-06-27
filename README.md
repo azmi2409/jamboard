@@ -2,7 +2,7 @@
 
 A collaborative AI-powered whiteboard built with React, TypeScript, and HTML5 Canvas. Draw, brainstorm, and collaborate in real-time with others.
 
-**Demo:** [https://jamboard-rust.vercel.app](https://jamboard-rust.vercel.app)
+**Demo:** [https://jamboard-ts.vercel.app](https://jamboard-ts.vercel.app)
 
 ## Features
 

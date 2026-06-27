@@ -61,6 +61,12 @@ export default function Canvas({
     elementId: string
     text: string
   } | null>(null)
+  const [selectionRect, setSelectionRect] = useState<{
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null>(null)
 
   useAutoSave(elements)
 
@@ -85,7 +91,7 @@ export default function Canvas({
     element?: CanvasElement
     startCanvas: Point
     lastCanvas: Point
-    mode?: 'draw' | 'move' | 'resize'
+    mode?: 'draw' | 'move' | 'resize' | 'select'
     resizeHandle?: string
   }>({
     active: false,
@@ -170,15 +176,30 @@ export default function Canvas({
       }
     }
 
+    if (selectionRect) {
+      ctx.save()
+      ctx.strokeStyle = '#3b82f6'
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 4])
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'
+      const screenX = selectionRect.x * viewport.zoom + viewport.x
+      const screenY = selectionRect.y * viewport.zoom + viewport.y
+      const screenW = selectionRect.width * viewport.zoom
+      const screenH = selectionRect.height * viewport.zoom
+      ctx.fillRect(screenX, screenY, screenW, screenH)
+      ctx.strokeRect(screenX, screenY, screenW, screenH)
+      ctx.restore()
+    }
+
     needsRenderRef.current = false
-  }, [elements, viewport, selectedIds, generatingIds])
+  }, [elements, viewport, selectedIds, generatingIds, selectionRect])
 
   useEffect(() => {
     needsRenderRef.current = true
     if (rafRef.current == null) {
       rafRef.current = requestAnimationFrame(renderFrame)
     }
-  }, [elements, viewport, selectedIds, generatingIds, renderFrame])
+  }, [elements, viewport, selectedIds, generatingIds, selectionRect, renderFrame])
 
   useEffect(() => {
     const handleResize = () => {
@@ -236,11 +257,13 @@ export default function Canvas({
           setSelectedIds(new Set([hit.id]))
         } else {
           setSelectedIds(new Set())
-          setPan({
-            isPanning: true,
-            panStart: screenPoint,
-            viewportStart: { ...viewport },
-          })
+          drawingRef.current = {
+            active: true,
+            startCanvas: point,
+            lastCanvas: point,
+            mode: 'select',
+          }
+          setSelectionRect({ x: point.x, y: point.y, width: 0, height: 0 })
         }
       } else {
         const newElement = createElement(tool, point, point, { roughness })
@@ -292,7 +315,21 @@ export default function Canvas({
       }
 
       const draw = drawingRef.current
-      if (!draw.active || !draw.element) return
+      if (!draw.active) return
+
+      if (draw.mode === 'select') {
+        const startX = draw.startCanvas.x
+        const startY = draw.startCanvas.y
+        setSelectionRect({
+          x: Math.min(startX, point.x),
+          y: Math.min(startY, point.y),
+          width: Math.abs(point.x - startX),
+          height: Math.abs(point.y - startY),
+        })
+        return
+      }
+
+      if (!draw.element) return
 
       if (draw.mode === 'draw') {
         const updated = updateElement(draw.element, draw.startCanvas, point)
@@ -324,7 +361,20 @@ export default function Canvas({
       if (canvasEl) canvasEl.releasePointerCapture(e.pointerId)
 
       const draw = drawingRef.current
-      if (draw.active && draw.element && draw.mode === 'draw') {
+      if (draw.active && draw.mode === 'select' && selectionRect) {
+        const selected = elements.filter((el) => {
+          const bounds = getElementBounds(el)
+          return (
+            bounds.x >= selectionRect.x &&
+            bounds.y >= selectionRect.y &&
+            bounds.x + bounds.width <= selectionRect.x + selectionRect.width &&
+            bounds.y + bounds.height <= selectionRect.y + selectionRect.height
+          )
+        })
+        if (selected.length > 0) {
+          setSelectedIds(new Set(selected.map((el) => el.id)))
+        }
+      } else if (draw.active && draw.element && draw.mode === 'draw') {
         const dx = draw.lastCanvas.x - draw.startCanvas.x
         const dy = draw.lastCanvas.y - draw.startCanvas.y
         if (Math.sqrt(dx * dx + dy * dy) < MIN_DRAG_DISTANCE) {
@@ -339,9 +389,10 @@ export default function Canvas({
         startCanvas: { x: 0, y: 0 },
         lastCanvas: { x: 0, y: 0 },
       }
+      setSelectionRect(null)
       setPan(DEFAULT_PAN)
     },
-    [push],
+    [push, selectionRect, elements],
   )
 
   const handleDoubleClick = useCallback(

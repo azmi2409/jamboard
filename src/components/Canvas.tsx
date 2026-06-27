@@ -67,6 +67,7 @@ export default function Canvas({
     width: number
     height: number
   } | null>(null)
+  const spaceRef = useRef(false)
 
   useAutoSave(elements)
 
@@ -232,7 +233,7 @@ export default function Canvas({
       lastMouseDownRef.current = screenPoint
       const point = getCanvasPoint(screenPoint)
 
-      if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+      if (e.button === 1 || (e.button === 0 && e.shiftKey) || spaceRef.current) {
         setPan({
           isPanning: true,
           panStart: screenPoint,
@@ -494,6 +495,29 @@ export default function Canvas({
       canvas.removeEventListener('dblclick', handleDoubleClick)
     }
   }, [handlePointerDown, handlePointerMove, handlePointerUp, handleWheel, handleDoubleClick])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !editingText) {
+        spaceRef.current = true
+        const canvasEl = canvasRef.current
+        if (canvasEl) canvasEl.style.cursor = 'grab'
+      }
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        spaceRef.current = false
+        const canvasEl = canvasRef.current
+        if (canvasEl) canvasEl.style.cursor = tool === 'select' ? 'default' : 'crosshair'
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [editingText, tool])
 
   const commitText = useCallback(
     (text: string) => {

@@ -4,9 +4,10 @@ interface ZoomControlProps {
   zoom: number
   onZoomIn: () => void
   onZoomOut: () => void
+  onReset: () => void
 }
 
-export default function ZoomControl({ zoom, onZoomIn, onZoomOut }: ZoomControlProps) {
+export default function ZoomControl({ zoom, onZoomIn, onZoomOut, onReset }: ZoomControlProps) {
   const percentage = Math.round(zoom * 100)
 
   return (
@@ -19,9 +20,14 @@ export default function ZoomControl({ zoom, onZoomIn, onZoomOut }: ZoomControlPr
       >
         <Minus className="h-4 w-4" />
       </button>
-      <span className="min-w-[50px] text-center text-sm font-medium text-neutral-700">
+      <button
+        type="button"
+        onClick={onReset}
+        className="min-w-[50px] cursor-pointer rounded-lg px-1 py-1 text-center text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+        title="Reset Zoom"
+      >
         {percentage}%
-      </span>
+      </button>
       <button
         type="button"
         onClick={onZoomIn}

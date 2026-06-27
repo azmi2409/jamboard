@@ -94,6 +94,10 @@ function App() {
     }))
   }, [])
 
+  const handleZoomReset = useCallback(() => {
+    setViewport((prev) => ({ ...prev, x: 0, y: 0, zoom: 1 }))
+  }, [])
+
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-50">
       <Toolbar
@@ -119,6 +123,7 @@ function App() {
         zoom={viewport.zoom}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
+        onReset={handleZoomReset}
       />
       <CursorsOverlay cursors={cursors} viewport={viewport} />
       <PromptBar

@@ -455,14 +455,23 @@ export default function Canvas({
     (e: WheelEvent) => {
       e.preventDefault()
       const screenPoint = { x: e.clientX, y: e.clientY }
-      const canvasPoint = getCanvasPoint(screenPoint)
-      const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05
-      setViewport((prev) => {
-        const newZoom = clamp(prev.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM)
-        const newX = screenPoint.x - canvasPoint.x * newZoom
-        const newY = screenPoint.y - canvasPoint.y * newZoom
-        return { ...prev, x: newX, y: newY, zoom: newZoom }
-      })
+
+      if (e.ctrlKey || e.metaKey) {
+        const canvasPoint = getCanvasPoint(screenPoint)
+        const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05
+        setViewport((prev) => {
+          const newZoom = clamp(prev.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM)
+          const newX = screenPoint.x - canvasPoint.x * newZoom
+          const newY = screenPoint.y - canvasPoint.y * newZoom
+          return { ...prev, x: newX, y: newY, zoom: newZoom }
+        })
+      } else {
+        setViewport((prev) => ({
+          ...prev,
+          x: prev.x - e.deltaX,
+          y: prev.y - e.deltaY,
+        }))
+      }
     },
     [getCanvasPoint],
   )
